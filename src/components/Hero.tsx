@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Satellite, Activity, AlertCircle } from "lucide-react";
 import heroImage from "@/assets/satellite-hero.jpg";
@@ -61,9 +62,11 @@ const Hero = () => {
           
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Button variant="hero" size="lg" className="text-base">
-              Start Monitoring
-            </Button>
+            <Link to="/monitoring">
+              <Button variant="hero" size="lg" className="text-base">
+                Start Monitoring
+              </Button>
+            </Link>
             <Button variant="outline" size="lg" className="text-base">
               Learn More
             </Button>
