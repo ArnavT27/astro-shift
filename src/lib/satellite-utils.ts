@@ -18,6 +18,7 @@ export interface SatelliteData {
   country?: string;
   launchDate?: string;
   satrec?: satellite.SatRec;
+  orbitType?: 'LEO' | 'MEO' | 'GEO' | 'HEO';
 }
 
 export interface DebrisData {
