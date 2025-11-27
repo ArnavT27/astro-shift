@@ -6,6 +6,7 @@ import Earth3DEnhanced from "@/components/monitoring/Earth3DEnhanced";
 import SatellitePanel from "@/components/monitoring/SatellitePanel";
 import SettingsPanel from "@/components/monitoring/SettingsPanel";
 import CollisionPanel from "@/components/monitoring/CollisionPanel";
+import SocratesPanel from "@/components/monitoring/SocratesPanel";
 import OrbitFilter from "@/components/monitoring/OrbitFilter";
 import StatsOverlay from "@/components/monitoring/StatsOverlay";
 import SatelliteSearch from "@/components/monitoring/SatelliteSearch";
@@ -233,6 +234,8 @@ export default function Monitoring() {
             satelliteStyle={satelliteStyle}
             setSatelliteStyle={setSatelliteStyle}
           />
+          
+          <SocratesPanel />
           
           <CollisionPanel
             realTimeCollisions={realTimeCollisions}
