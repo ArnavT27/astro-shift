@@ -5,27 +5,31 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertTriangle, RefreshCw, Satellite, Clock, TrendingUp } from 'lucide-react';
 import { 
-  SocratesConjunction, 
-  fetchSocratesData, 
+  CelesTrakConjunction, 
+  fetchCelesTrakSocratesData, 
   getRiskLevelFromProbability,
-  getRiskColorFromProbability 
-} from '@/lib/keeptrack-api';
+  getRiskColorFromProbability,
+  getRiskLevelFromRange 
+} from '@/lib/celestrak-api';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SocratesPanel() {
-  const [conjunctions, setConjunctions] = useState<SocratesConjunction[]>([]);
+  const [conjunctions, setConjunctions] = useState<CelesTrakConjunction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   
   const loadConjunctions = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchSocratesData();
+      const data = await fetchCelesTrakSocratesData();
       setConjunctions(data);
       
-      // Count critical events
-      const criticalCount = data.filter(c => c.MAX_PROB >= 0.5).length;
-      const highCount = data.filter(c => c.MAX_PROB >= 0.2 && c.MAX_PROB < 0.5).length;
+      // Count critical events (probability >= 1e-4 or range <= 500m)
+      const criticalCount = data.filter(c => c.MAX_PROB >= 1e-4 || c.TCA_RANGE <= 500).length;
+      const highCount = data.filter(c => 
+        (c.MAX_PROB >= 1e-5 && c.MAX_PROB < 1e-4) || 
+        (c.TCA_RANGE > 500 && c.TCA_RANGE <= 1000)
+      ).length;
       
       if (criticalCount > 0) {
         toast({
@@ -37,7 +41,7 @@ export default function SocratesPanel() {
     } catch (error) {
       toast({
         title: "Failed to Load Data",
-        description: "Could not fetch conjunction data from Keeptrack API",
+        description: "Could not fetch conjunction data from CelesTrak API",
         variant: "destructive",
       });
     } finally {
@@ -53,8 +57,11 @@ export default function SocratesPanel() {
     return () => clearInterval(interval);
   }, []);
   
-  const criticalCount = conjunctions.filter(c => c.MAX_PROB >= 0.5).length;
-  const highCount = conjunctions.filter(c => c.MAX_PROB >= 0.2 && c.MAX_PROB < 0.5).length;
+  const criticalCount = conjunctions.filter(c => c.MAX_PROB >= 1e-4 || c.TCA_RANGE <= 500).length;
+  const highCount = conjunctions.filter(c => 
+    (c.MAX_PROB >= 1e-5 && c.MAX_PROB < 1e-4) || 
+    (c.TCA_RANGE > 500 && c.TCA_RANGE <= 1000)
+  ).length;
   
   return (
     <Card className="bg-card/50 backdrop-blur-sm border-border">
@@ -74,7 +81,7 @@ export default function SocratesPanel() {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Data from NASA SOCRATES via Keeptrack API
+          Data from CelesTrak SOCRATES
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -98,8 +105,8 @@ export default function SocratesPanel() {
             </p>
           ) : (
             <div className="space-y-2">
-              {conjunctions.map((conjunction) => (
-                <ConjunctionCard key={conjunction.ID} conjunction={conjunction} />
+              {conjunctions.slice(0, 50).map((conjunction, idx) => (
+                <ConjunctionCard key={`${conjunction.NORAD_CAT_ID_1}-${conjunction.NORAD_CAT_ID_2}-${idx}`} conjunction={conjunction} />
               ))}
             </div>
           )}
@@ -109,10 +116,22 @@ export default function SocratesPanel() {
   );
 }
 
-function ConjunctionCard({ conjunction }: { conjunction: SocratesConjunction }) {
-  const riskLevel = getRiskLevelFromProbability(conjunction.MAX_PROB);
-  const riskColor = getRiskColorFromProbability(conjunction.MAX_PROB);
-  const toca = new Date(conjunction.TOCA);
+function ConjunctionCard({ conjunction }: { conjunction: CelesTrakConjunction }) {
+  const probRiskLevel = getRiskLevelFromProbability(conjunction.MAX_PROB);
+  const rangeRiskLevel = getRiskLevelFromRange(conjunction.TCA_RANGE);
+  
+  // Use the higher risk level
+  const riskLevel = probRiskLevel === 'critical' || rangeRiskLevel === 'critical' ? 'critical' :
+                    probRiskLevel === 'high' || rangeRiskLevel === 'high' ? 'high' :
+                    probRiskLevel === 'medium' || rangeRiskLevel === 'medium' ? 'medium' : 'low';
+  
+  const riskColor = getRiskColorFromProbability(
+    riskLevel === 'critical' ? 1e-4 :
+    riskLevel === 'high' ? 1e-5 :
+    riskLevel === 'medium' ? 1e-6 : 1e-7
+  );
+  
+  const toca = new Date(conjunction.TCA);
   const timeUntil = toca.getTime() - Date.now();
   const hoursUntil = Math.floor(timeUntil / (1000 * 60 * 60));
   
@@ -128,10 +147,10 @@ function ConjunctionCard({ conjunction }: { conjunction: SocratesConjunction }) 
           className="text-xs font-semibold"
           style={{ color: riskColor, borderColor: riskColor }}
         >
-          {riskLevel.toUpperCase()} • {(conjunction.MAX_PROB * 100).toFixed(1)}%
+          {riskLevel.toUpperCase()} • {conjunction.MAX_PROB.toExponential(2)}
         </Badge>
         <span className="text-xs font-mono text-primary font-bold">
-          {conjunction.MIN_RNG.toFixed(3)} km
+          {(conjunction.TCA_RANGE / 1000).toFixed(3)} km
         </span>
       </div>
       
@@ -139,16 +158,16 @@ function ConjunctionCard({ conjunction }: { conjunction: SocratesConjunction }) 
       <div className="space-y-1 mb-2">
         <div className="flex items-center gap-1 text-xs">
           <Satellite className="w-3 h-3 text-foreground" />
-          <span className="font-medium text-foreground truncate">{conjunction.SAT1_NAME}</span>
+          <span className="font-medium text-foreground truncate">{conjunction.OBJECT_NAME_1}</span>
           <Badge variant="secondary" className="text-[10px] px-1 py-0">
-            {conjunction.SAT1_STATUS === 'Operational' ? 'OP' : 'NON-OP'}
+            {conjunction.NORAD_CAT_ID_1}
           </Badge>
         </div>
         <div className="flex items-center gap-1 text-xs">
           <Satellite className="w-3 h-3 text-muted-foreground" />
-          <span className="font-medium text-muted-foreground truncate">{conjunction.SAT2_NAME}</span>
+          <span className="font-medium text-muted-foreground truncate">{conjunction.OBJECT_NAME_2}</span>
           <Badge variant="secondary" className="text-[10px] px-1 py-0">
-            {conjunction.SAT2_STATUS === 'Operational' ? 'OP' : 'NON-OP'}
+            {conjunction.NORAD_CAT_ID_2}
           </Badge>
         </div>
       </div>
@@ -161,19 +180,24 @@ function ConjunctionCard({ conjunction }: { conjunction: SocratesConjunction }) 
         </div>
         <div className="flex items-center gap-1">
           <TrendingUp className="w-3 h-3" />
-          <span>{conjunction.REL_SPEED.toFixed(2)} km/s</span>
+          <span>{(conjunction.TCA_RELATIVE_SPEED / 1000).toFixed(2)} km/s</span>
         </div>
       </div>
       
-      {/* Time of Closest Approach */}
-      <p className="text-[10px] text-muted-foreground mt-2">
-        TCA: {toca.toLocaleString('en-US', { 
-          month: 'short', 
-          day: 'numeric', 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}
-      </p>
+      {/* Time of Closest Approach & Days Since Epoch */}
+      <div className="mt-2 space-y-1">
+        <p className="text-[10px] text-muted-foreground">
+          TCA: {toca.toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}
+        </p>
+        <p className="text-[10px] text-muted-foreground">
+          DSE: {conjunction.DSE_1.toFixed(1)}d / {conjunction.DSE_2.toFixed(1)}d
+        </p>
+      </div>
     </div>
   );
 }
